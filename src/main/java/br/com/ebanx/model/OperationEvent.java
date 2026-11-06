@@ -1,0 +1,38 @@
+package br.com.ebanx.model;
+
+import java.math.BigDecimal;
+
+public class OperationEvent {
+    private TypeEnum type;
+    private BigDecimal amount;
+    private String destination;
+    private String origin;
+
+    public void setType(TypeEnum type) {
+        this.type = type;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
+    public String getDestination() {
+        return destination;
+    }
+
+    public void setDestination(String destination) {
+        this.destination = destination;
+    }
+
+    public String getOrigin() {
+        return origin;
+    }
+
+    public void setOrigin(String origin) {
+        this.origin = origin;
+    }
+}
