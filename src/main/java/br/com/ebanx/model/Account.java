@@ -17,6 +17,10 @@ public class Account {
         this.balance = this.balance.add(amount);
     }
 
+    public void withdraw(BigDecimal amount) {
+        this.balance = this.balance.subtract(amount);
+    }
+
     public String getId() {
         return id;
     }
@@ -37,4 +41,5 @@ public class Account {
     public int hashCode() {
         return Objects.hash(id);
     }
+
 }

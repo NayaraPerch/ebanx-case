@@ -8,6 +8,9 @@ public class OperationEvent {
     private String destination;
     private String origin;
 
+    public TypeEnum getType() {
+        return type;
+    }
     public void setType(TypeEnum type) {
         this.type = type;
     }
