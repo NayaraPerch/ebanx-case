@@ -17,4 +17,9 @@ public class InMemoryAccountRepository implements AccountRepository {
     public void save(Account account) {
         accountMap.put(account.getId(), account);
     }
+
+    @Override
+    public void clear() {
+        accountMap.clear();
+    }
 }

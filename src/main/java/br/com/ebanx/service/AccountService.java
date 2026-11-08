@@ -89,4 +89,8 @@ public class AccountService {
 
         return new TransferResponse(origin, destinationAccount);
     }
+
+    public void reset() {
+        accountRepository.clear();
+    }
 }

@@ -2,7 +2,6 @@ package br.com.ebanx.controller;
 
 import br.com.ebanx.exception.AccountNotFoundException;
 import br.com.ebanx.model.OperationEvent;
-import br.com.ebanx.model.TypeEnum;
 import br.com.ebanx.service.AccountService;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -17,7 +16,7 @@ public class AccountController implements HttpHandler {
 
     private final AccountService accountService;
 
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper;
 
     public AccountController(AccountService accountService) {
         this.accountService = accountService;
@@ -29,10 +28,17 @@ public class AccountController implements HttpHandler {
         String method = exchange.getRequestMethod();
         String path = exchange.getRequestURI().getPath();
 
+        if (method.equals("POST") && path.equals("/reset")) {
+            System.out.println("Account Controller - Iniciando reset");
+            accountService.reset();
+            sendResponse(exchange, 200, "OK");
+        }
+
         if (method.equals("GET") && path.equals("/balance")) {
             URI uri = exchange.getRequestURI();
             String query = uri.getQuery();
             String accountId = query.split("=")[1];
+            System.out.println("Account Controller - Buscando saldo da conta: " + accountId);
             try {
                 BigDecimal balance = accountService.getBalance(accountId);
                 sendResponse(exchange, 200, balance.toString());
@@ -46,9 +52,6 @@ public class AccountController implements HttpHandler {
                         exchange.getRequestBody(),
                         OperationEvent.class
                 );
-
-                System.out.println("Evento recebido: " + event.getType());
-
             } catch (Exception e) {
                 e.printStackTrace();
                 sendResponse(exchange, 400, "Erro ao ler JSON");
@@ -56,25 +59,38 @@ public class AccountController implements HttpHandler {
             }
 
             Object response;
-            switch (TypeEnum.fromValue(event.getType().toString())) {
+            switch (event.getType()) {
                 case DEPOSIT -> {
+                    System.out.println("Account Controller - Iniciando deposito. Conta destino: " + event.getDestination() + " valor: " + event.getAmount());
                     response = accountService.deposit(event);
                 }
-
                 case TRANSFER -> {
-                    response = accountService.transfer(event);
+                    try{
+                        System.out.println("Account Controller - Iniciando transferencia. Conta origem: " + event.getOrigin()
+                                + " Conta destino: " + event.getDestination()
+                                + " valor: " + event.getAmount());
+                        response = accountService.transfer(event);
+                    }catch (AccountNotFoundException e){
+                        sendResponse(exchange, 404, "0");
+                        return;
+                    }
                 }
-
                 case WITHDRAW -> {
-                    response = accountService.withdraw(event);
+                   try{
+                       System.out.println("Account Controller - Iniciando saque. Conta origem: " + event.getOrigin() + " valor: " + event.getAmount());
+                        response = accountService.withdraw(event);
+                    }catch (AccountNotFoundException e){
+                        sendResponse(exchange, 404, "0");
+                        return;
+                    }
                 }
-
                 default -> throw new IllegalStateException("Unexpected value: " + event.getType());
             }
             String json = objectMapper.writeValueAsString(response);
             sendResponse(exchange, 201, json);
         }
 
+        sendResponse(exchange, 404, "Endpoint not found");
     }
 
     private void sendResponse(HttpExchange exchange,int statusCode,String body) throws IOException{
