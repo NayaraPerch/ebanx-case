@@ -1,8 +1,8 @@
 package br.com.ebanx.controller;
 
 import br.com.ebanx.model.Account;
-import br.com.ebanx.repository.AccountRepository;
-import br.com.ebanx.repository.InMemoryAccountRepository;
+import br.com.ebanx.repository.AccountRepositoryInterface;
+import br.com.ebanx.repository.InMemoryAccountRepositoryInterface;
 import br.com.ebanx.service.AccountService;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class AccountControllerTest {
 
     private HttpServer server;
-    private AccountRepository repository;
+    private AccountRepositoryInterface repository;
     @BeforeEach
     void setUp() throws IOException {
 
@@ -34,7 +34,7 @@ public class AccountControllerTest {
                 0
         );
 
-        repository = new InMemoryAccountRepository();
+        repository = new InMemoryAccountRepositoryInterface();
         AccountService service = new AccountService(repository);
         server.createContext("/balance", new AccountController(service));
         server.createContext("/event", new AccountController(service));

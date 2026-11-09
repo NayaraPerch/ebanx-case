@@ -2,20 +2,20 @@ package br.com.ebanx.service;
 
 import br.com.ebanx.exception.AccountNotFoundException;
 import br.com.ebanx.model.*;
-import br.com.ebanx.repository.AccountRepository;
+import br.com.ebanx.repository.AccountRepositoryInterface;
 
 import java.math.BigDecimal;
 import java.util.Optional;
 
 public class AccountService {
 
-    private final AccountRepository accountRepository;
-    public AccountService(AccountRepository accountRepository) {
-        this.accountRepository = accountRepository;
+    private final AccountRepositoryInterface accountRepositoryInterface;
+    public AccountService(AccountRepositoryInterface accountRepositoryInterface) {
+        this.accountRepositoryInterface = accountRepositoryInterface;
     }
 
     public DepositResponse deposit(OperationEvent operationEvent) {
-        Optional<Account> existentAccount = accountRepository.findAccountById(operationEvent.getDestination());
+        Optional<Account> existentAccount = accountRepositoryInterface.findAccountById(operationEvent.getDestination());
 
         Account account = existentAccount.orElseGet(
                 () -> new Account(
@@ -28,12 +28,12 @@ public class AccountService {
             account.deposit(operationEvent.getAmount());
         }
 
-        accountRepository.save(account);
+        accountRepositoryInterface.save(account);
         return new DepositResponse(account);
     }
 
     public BigDecimal getBalance(String accountId) {
-        Optional<Account> account = accountRepository.findAccountById(accountId);
+        Optional<Account> account = accountRepositoryInterface.findAccountById(accountId);
 
         if (account.isEmpty()) {
             throw new AccountNotFoundException(
@@ -45,7 +45,7 @@ public class AccountService {
     }
 
     public WithdrawResponse withdraw(OperationEvent operationEvent) throws AccountNotFoundException {
-        Optional<Account> existentAccount = accountRepository.findAccountById(operationEvent.getOrigin());
+        Optional<Account> existentAccount = accountRepositoryInterface.findAccountById(operationEvent.getOrigin());
 
         if (existentAccount.isEmpty()) {
             throw new AccountNotFoundException(
@@ -55,12 +55,12 @@ public class AccountService {
         Account account = existentAccount.get();
         account.withdraw(operationEvent.getAmount());
 
-        accountRepository.save(existentAccount.get());
+        accountRepositoryInterface.save(existentAccount.get());
         return new WithdrawResponse(existentAccount.get());
     }
 
     public TransferResponse transfer(OperationEvent operationEvent) {
-        Optional<Account> originAccount = accountRepository.findAccountById(operationEvent.getOrigin());
+        Optional<Account> originAccount = accountRepositoryInterface.findAccountById(operationEvent.getOrigin());
 
         if (originAccount.isEmpty()) {
             throw new AccountNotFoundException(
@@ -68,7 +68,7 @@ public class AccountService {
             );
         }
 
-        Optional<Account> optionalDestination = accountRepository.findAccountById(operationEvent.getDestination());
+        Optional<Account> optionalDestination = accountRepositoryInterface.findAccountById(operationEvent.getDestination());
         Account destinationAccount = optionalDestination.orElseGet(
                 () -> new Account(
                         operationEvent.getDestination(),
@@ -80,17 +80,17 @@ public class AccountService {
 
         //debita
         origin.withdraw(operationEvent.getAmount());
-        accountRepository.save(origin);
+        accountRepositoryInterface.save(origin);
 
         //deposita
         destinationAccount.deposit(operationEvent.getAmount());
-        accountRepository.save(destinationAccount);
+        accountRepositoryInterface.save(destinationAccount);
 
 
         return new TransferResponse(origin, destinationAccount);
     }
 
     public void reset() {
-        accountRepository.clear();
+        accountRepositoryInterface.clear();
     }
 }

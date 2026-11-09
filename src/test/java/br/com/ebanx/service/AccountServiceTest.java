@@ -3,74 +3,107 @@ package br.com.ebanx.service;
 import br.com.ebanx.exception.AccountNotFoundException;
 import br.com.ebanx.model.*;
 import br.com.ebanx.repository.AccountRepository;
-import br.com.ebanx.repository.InMemoryAccountRepository;
+import br.com.ebanx.repository.AccountRepositoryInterface;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-
 public class AccountServiceTest {
 
+   private Connection connection;
+   private AccountRepositoryInterface accountRepository;
+   private AccountService accountService;
+
+   @BeforeEach
+   void setUp() throws SQLException {
+      String databaseName = "testdb_" + UUID.randomUUID();
+
+      connection = DriverManager.getConnection(
+              "jdbc:h2:mem:" + databaseName,
+              "sa",
+              ""
+      );
+
+      accountRepository = new AccountRepository(connection);
+      accountService = new AccountService(accountRepository);
+   }
+
+   @AfterEach
+   void tearDown() throws SQLException {
+      if (connection != null && !connection.isClosed()) {
+         connection.close();
+      }
+   }
+
    // DEPOSIT TESTS //
-    @Test
-    void shouldCreateAccountWhenDepositingIntoNonexistentAccount(){
-       OperationEvent operationEvent = new OperationEvent();
-       AccountRepository accountRepository = new InMemoryAccountRepository();
-       AccountService accountService = new AccountService(accountRepository);
-
-
-       operationEvent.setType(TypeEnum.DEPOSIT);
-       operationEvent.setAmount(new BigDecimal("150"));
-       operationEvent.setDestination("1234");
-       Optional<Account> account = accountRepository.findAccountById(operationEvent.getDestination());
-
-       assertFalse(account.isPresent());
-
-       DepositResponse depositResponse = accountService.deposit(operationEvent);
-
-       account = accountRepository.findAccountById(operationEvent.getDestination());
-       assertTrue(account.isPresent());
-       assertEquals(account.get().getId(), operationEvent.getDestination());
-       assertEquals(account.get().getBalance(), operationEvent.getAmount());
-       assertNotNull(depositResponse);
-       assertNotNull(depositResponse.getDestination());
-
-    }
-
-    @Test
-    void shouldIncreaseBalanceWhenDepositingIntoExistingAccount(){
-       OperationEvent operationEvent = new OperationEvent();
-       AccountRepository accountRepository = new InMemoryAccountRepository();
-       AccountService accountService = new AccountService(accountRepository);
-
-       Account accountFake = new Account("1234", new BigDecimal("50"));
-       BigDecimal initialBalance = accountFake.getBalance();
-       accountRepository.save(accountFake);
-
-       operationEvent.setType(TypeEnum.DEPOSIT);
-       operationEvent.setAmount(new BigDecimal("150"));
-       operationEvent.setDestination("1234");
-
-       DepositResponse depositResponse = accountService.deposit(operationEvent);
-
-       Optional<Account> account = accountRepository.findAccountById(operationEvent.getDestination());
-       assertTrue(account.isPresent());
-       assertEquals(operationEvent.getDestination(), account.get().getId());
-       assertEquals(initialBalance.add(operationEvent.getAmount()),
-               account.get().getBalance());
-       assertNotNull(depositResponse);
-       assertNotNull(depositResponse.getDestination());
-    }
-
-    // BALANCE TESTS //
 
    @Test
-   void shouldReturnBalanceWhenAccountExists(){
-      AccountRepository accountRepository = new InMemoryAccountRepository();
-      AccountService accountService = new AccountService(accountRepository);
+   void shouldCreateAccountWhenDepositingIntoNonexistentAccount() {
+
+      OperationEvent operationEvent = new OperationEvent();
+
+      operationEvent.setType(TypeEnum.DEPOSIT);
+      operationEvent.setAmount(new BigDecimal("150"));
+      operationEvent.setDestination("1234");
+
+      Optional<Account> account =
+              accountRepository.findAccountById(operationEvent.getDestination());
+
+      assertFalse(account.isPresent());
+
+      DepositResponse depositResponse = accountService.deposit(operationEvent);
+
+      account = accountRepository.findAccountById(operationEvent.getDestination());
+
+      assertTrue(account.isPresent());
+      assertEquals(operationEvent.getDestination(), account.get().getId());
+      assertEquals(operationEvent.getAmount(), account.get().getBalance());
+      assertNotNull(depositResponse);
+      assertNotNull(depositResponse.getDestination());
+   }
+
+   @Test
+   void shouldIncreaseBalanceWhenDepositingIntoExistingAccount() {
+
+      Account accountFake = new Account("1234", new BigDecimal("50"));
+      BigDecimal initialBalance = accountFake.getBalance();
+
+      accountRepository.save(accountFake);
+
+      OperationEvent operationEvent = new OperationEvent();
+
+      operationEvent.setType(TypeEnum.DEPOSIT);
+      operationEvent.setAmount(new BigDecimal("150"));
+      operationEvent.setDestination("1234");
+
+      DepositResponse depositResponse = accountService.deposit(operationEvent);
+
+      Optional<Account> account =
+              accountRepository.findAccountById(operationEvent.getDestination());
+
+      assertTrue(account.isPresent());
+      assertEquals(operationEvent.getDestination(), account.get().getId());
+      assertEquals(
+              initialBalance.add(operationEvent.getAmount()),
+              account.get().getBalance()
+      );
+      assertNotNull(depositResponse);
+      assertNotNull(depositResponse.getDestination());
+   }
+
+   // BALANCE TESTS //
+
+   @Test
+   void shouldReturnBalanceWhenAccountExists() {
 
       Account accountFake = new Account("1111", new BigDecimal("123"));
       accountRepository.save(accountFake);
@@ -82,9 +115,7 @@ public class AccountServiceTest {
    }
 
    @Test
-   void shouldThrowExceptionWhenAccountDontExists(){
-      AccountRepository accountRepository = new InMemoryAccountRepository();
-      AccountService accountService = new AccountService(accountRepository);
+   void shouldThrowExceptionWhenAccountDontExists() {
 
       assertThrows(
               AccountNotFoundException.class,
@@ -92,15 +123,17 @@ public class AccountServiceTest {
       );
    }
 
+   // WITHDRAW TESTS //
+
    @Test
-   void shouldDecreaseBalanceWhenWithdrawExistingAccount(){
-      OperationEvent operationEvent = new OperationEvent();
-      AccountRepository accountRepository = new InMemoryAccountRepository();
-      AccountService accountService = new AccountService(accountRepository);
+   void shouldDecreaseBalanceWhenWithdrawExistingAccount() {
 
       Account accountFake = new Account("1234", new BigDecimal("50"));
       BigDecimal initialBalance = accountFake.getBalance();
+
       accountRepository.save(accountFake);
+
+      OperationEvent operationEvent = new OperationEvent();
 
       operationEvent.setType(TypeEnum.WITHDRAW);
       operationEvent.setAmount(new BigDecimal("10"));
@@ -108,20 +141,23 @@ public class AccountServiceTest {
 
       WithdrawResponse accountOrigin = accountService.withdraw(operationEvent);
 
-      Optional<Account> account = accountRepository.findAccountById(operationEvent.getOrigin());
+      Optional<Account> account =
+              accountRepository.findAccountById(operationEvent.getOrigin());
+
       assertTrue(account.isPresent());
       assertEquals(operationEvent.getOrigin(), account.get().getId());
-      assertEquals(initialBalance.subtract(operationEvent.getAmount()),
-              account.get().getBalance());
+      assertEquals(
+              initialBalance.subtract(operationEvent.getAmount()),
+              account.get().getBalance()
+      );
       assertNotNull(accountOrigin);
       assertNotNull(accountOrigin.getOrigin());
    }
 
    @Test
-   void shouldThrowExceptionWhenWithdrawAndAccountDontExists() throws AccountNotFoundException {
+   void shouldThrowExceptionWhenWithdrawAndAccountDontExists() {
+
       OperationEvent operationEvent = new OperationEvent();
-      AccountRepository accountRepository = new InMemoryAccountRepository();
-      AccountService accountService = new AccountService(accountRepository);
 
       operationEvent.setType(TypeEnum.WITHDRAW);
       operationEvent.setAmount(new BigDecimal("10"));
@@ -131,15 +167,14 @@ public class AccountServiceTest {
               AccountNotFoundException.class,
               () -> accountService.withdraw(operationEvent)
       );
+
       assertTrue(accountRepository.findAccountById("1234").isEmpty());
    }
 
-   // TRANSFER TESTS // Falta o teste da excecao
+   // TRANSFER TESTS //
+
    @Test
-   void shouldTransferAmountBetweenExistingAccounts(){
-      OperationEvent operationEvent = new OperationEvent();
-      AccountRepository accountRepository = new InMemoryAccountRepository();
-      AccountService accountService = new AccountService(accountRepository);
+   void shouldTransferAmountBetweenExistingAccounts() {
 
       Account originAccount = new Account("1234", new BigDecimal("50"));
       BigDecimal initialOriginBalance = originAccount.getBalance();
@@ -149,6 +184,8 @@ public class AccountServiceTest {
       BigDecimal initialDestinationBalance = destinationAccount.getBalance();
       accountRepository.save(destinationAccount);
 
+      OperationEvent operationEvent = new OperationEvent();
+
       operationEvent.setType(TypeEnum.TRANSFER);
       operationEvent.setAmount(new BigDecimal("10"));
       operationEvent.setOrigin("1234");
@@ -156,20 +193,32 @@ public class AccountServiceTest {
 
       TransferResponse transferResponse = accountService.transfer(operationEvent);
 
-      Optional<Account> accountOrigin = accountRepository.findAccountById(operationEvent.getOrigin());
-      Optional<Account> accountDestination = accountRepository.findAccountById(operationEvent.getDestination());
+      Optional<Account> accountOrigin =
+              accountRepository.findAccountById(operationEvent.getOrigin());
+
+      Optional<Account> accountDestination =
+              accountRepository.findAccountById(operationEvent.getDestination());
 
       assertTrue(accountOrigin.isPresent());
       assertTrue(accountDestination.isPresent());
+
       assertEquals(operationEvent.getDestination(), accountDestination.get().getId());
       assertEquals(operationEvent.getOrigin(), accountOrigin.get().getId());
-      assertEquals(initialOriginBalance.subtract(operationEvent.getAmount()),
-              accountOrigin.get().getBalance());
-      assertEquals(initialDestinationBalance.add(operationEvent.getAmount()),
-              accountDestination.get().getBalance());
+
+      assertEquals(
+              initialOriginBalance.subtract(operationEvent.getAmount()),
+              accountOrigin.get().getBalance()
+      );
+
+      assertEquals(
+              initialDestinationBalance.add(operationEvent.getAmount()),
+              accountDestination.get().getBalance()
+      );
+
       assertNotNull(transferResponse);
       assertNotNull(transferResponse.getDestination());
       assertNotNull(transferResponse.getOrigin());
+
       assertEquals(
               initialOriginBalance.subtract(operationEvent.getAmount()),
               transferResponse.getOrigin().getBalance()
@@ -181,22 +230,19 @@ public class AccountServiceTest {
       );
    }
 
-
    @Test
    void shouldCreateDestinationAccountWhenTransferringToNonexistentAccount() {
-      OperationEvent operationEvent = new OperationEvent();
-      AccountRepository accountRepository = new InMemoryAccountRepository();
-      AccountService accountService = new AccountService(accountRepository);
 
       Account originAccount = new Account("1234", new BigDecimal("50"));
       accountRepository.save(originAccount);
+
+      OperationEvent operationEvent = new OperationEvent();
 
       operationEvent.setType(TypeEnum.TRANSFER);
       operationEvent.setAmount(new BigDecimal("10"));
       operationEvent.setOrigin("1234");
       operationEvent.setDestination("2222");
 
-      // Verifica que a conta de destino ainda não existe
       assertTrue(accountRepository.findAccountById("2222").isEmpty());
 
       TransferResponse transferResponse = accountService.transfer(operationEvent);
@@ -207,21 +253,25 @@ public class AccountServiceTest {
       Optional<Account> accountDestination =
               accountRepository.findAccountById("2222");
 
-      // Verifica a existência das duas contas
       assertTrue(accountOrigin.isPresent());
       assertTrue(accountDestination.isPresent());
 
-      // Verifica os saldos após a transferência
       assertEquals(new BigDecimal("40"), accountOrigin.get().getBalance());
       assertEquals(new BigDecimal("10"), accountDestination.get().getBalance());
 
-      // Verifica a resposta da transferência
       assertNotNull(transferResponse);
+
       assertEquals("1234", transferResponse.getOrigin().getId());
       assertEquals("2222", transferResponse.getDestination().getId());
-      assertEquals(new BigDecimal("40"), transferResponse.getOrigin().getBalance());
-      assertEquals(new BigDecimal("10"), transferResponse.getDestination().getBalance());
+
+      assertEquals(
+              new BigDecimal("40"),
+              transferResponse.getOrigin().getBalance()
+      );
+
+      assertEquals(
+              new BigDecimal("10"),
+              transferResponse.getDestination().getBalance()
+      );
    }
-
-
 }

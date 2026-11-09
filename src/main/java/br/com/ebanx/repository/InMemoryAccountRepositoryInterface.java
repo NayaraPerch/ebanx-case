@@ -6,20 +6,23 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
-public class InMemoryAccountRepository implements AccountRepository {
+public class InMemoryAccountRepositoryInterface implements AccountRepositoryInterface {
     private final Map<String, Account> accountMap = new HashMap<>();
     @Override
     public Optional<Account> findAccountById(String id) {
-      return Optional.ofNullable(accountMap.get(id));
+
+        return Optional.ofNullable(accountMap.get(id));
     }
 
     @Override
     public void save(Account account) {
+
         accountMap.put(account.getId(), account);
     }
 
     @Override
     public void clear() {
+
         accountMap.clear();
     }
 }
