@@ -1,17 +1,21 @@
+
 package br.com.ebanx.service;
 
 import br.com.ebanx.exception.AccountNotFoundException;
+import br.com.ebanx.exception.InsuficientFundsException;
 import br.com.ebanx.model.*;
 import br.com.ebanx.repository.AccountRepository;
 import br.com.ebanx.repository.AccountRepositoryInterface;
-import org.junit.jupiter.api.AfterEach;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
+import javax.sql.DataSource;
+
 import java.math.BigDecimal;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,29 +23,36 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class AccountServiceTest {
 
-   private Connection connection;
    private AccountRepositoryInterface accountRepository;
    private AccountService accountService;
 
    @BeforeEach
-   void setUp() throws SQLException {
+   void setUp() {
+
       String databaseName = "testdb_" + UUID.randomUUID();
 
-      connection = DriverManager.getConnection(
-              "jdbc:h2:mem:" + databaseName,
+      DataSource dataSource = new DriverManagerDataSource(
+              "jdbc:h2:mem:" + databaseName + ";DB_CLOSE_DELAY=-1",
               "sa",
               ""
       );
 
-      accountRepository = new AccountRepository(connection);
+      JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
+      // Creates the table before instantiating the repository.
+      jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS accounts (
+                    id VARCHAR(50) PRIMARY KEY,
+                    balance DECIMAL(19, 2) NOT NULL
+                )
+                """);
+
+      accountRepository = new AccountRepository(jdbcTemplate);
       accountService = new AccountService(accountRepository);
    }
 
-   @AfterEach
-   void tearDown() throws SQLException {
-      if (connection != null && !connection.isClosed()) {
-         connection.close();
-      }
+   private void assertBalance(BigDecimal expected, BigDecimal actual) {
+      assertEquals(0, expected.compareTo(actual));
    }
 
    // DEPOSIT TESTS //
@@ -66,7 +77,8 @@ public class AccountServiceTest {
 
       assertTrue(account.isPresent());
       assertEquals(operationEvent.getDestination(), account.get().getId());
-      assertEquals(operationEvent.getAmount(), account.get().getBalance());
+      assertBalance(operationEvent.getAmount(), account.get().getBalance());
+
       assertNotNull(depositResponse);
       assertNotNull(depositResponse.getDestination());
    }
@@ -92,10 +104,12 @@ public class AccountServiceTest {
 
       assertTrue(account.isPresent());
       assertEquals(operationEvent.getDestination(), account.get().getId());
-      assertEquals(
+
+      assertBalance(
               initialBalance.add(operationEvent.getAmount()),
               account.get().getBalance()
       );
+
       assertNotNull(depositResponse);
       assertNotNull(depositResponse.getDestination());
    }
@@ -111,11 +125,11 @@ public class AccountServiceTest {
       BigDecimal balance = accountService.getBalance(accountFake.getId());
 
       assertNotNull(balance);
-      assertEquals(accountFake.getBalance(), balance);
+      assertBalance(accountFake.getBalance(), balance);
    }
 
    @Test
-   void shouldThrowExceptionWhenAccountDontExists() {
+   void shouldThrowExceptionWhenAccountDoesNotExist() {
 
       assertThrows(
               AccountNotFoundException.class,
@@ -126,7 +140,7 @@ public class AccountServiceTest {
    // WITHDRAW TESTS //
 
    @Test
-   void shouldDecreaseBalanceWhenWithdrawExistingAccount() {
+   void shouldDecreaseBalanceWhenWithdrawingFromExistingAccount() {
 
       Account accountFake = new Account("1234", new BigDecimal("50"));
       BigDecimal initialBalance = accountFake.getBalance();
@@ -146,16 +160,18 @@ public class AccountServiceTest {
 
       assertTrue(account.isPresent());
       assertEquals(operationEvent.getOrigin(), account.get().getId());
-      assertEquals(
+
+      assertBalance(
               initialBalance.subtract(operationEvent.getAmount()),
               account.get().getBalance()
       );
+
       assertNotNull(accountOrigin);
       assertNotNull(accountOrigin.getOrigin());
    }
 
    @Test
-   void shouldThrowExceptionWhenWithdrawAndAccountDontExists() {
+   void shouldThrowExceptionWhenWithdrawingFromNonexistentAccount() {
 
       OperationEvent operationEvent = new OperationEvent();
 
@@ -169,6 +185,28 @@ public class AccountServiceTest {
       );
 
       assertTrue(accountRepository.findAccountById("1234").isEmpty());
+   }
+
+   @Test
+   void shouldThrowExceptionWhenWithdrawingWithInsufficientFunds() {
+
+      accountRepository.save(new Account("1234", new BigDecimal("50")));
+
+      OperationEvent operationEvent = new OperationEvent();
+
+      operationEvent.setType(TypeEnum.WITHDRAW);
+      operationEvent.setAmount(new BigDecimal("100"));
+      operationEvent.setOrigin("1234");
+
+      assertThrows(
+              InsuficientFundsException.class,
+              () -> accountService.withdraw(operationEvent)
+      );
+
+      assertBalance(
+              new BigDecimal("50"),
+              accountRepository.findAccountById("1234").get().getBalance()
+      );
    }
 
    // TRANSFER TESTS //
@@ -205,12 +243,12 @@ public class AccountServiceTest {
       assertEquals(operationEvent.getDestination(), accountDestination.get().getId());
       assertEquals(operationEvent.getOrigin(), accountOrigin.get().getId());
 
-      assertEquals(
+      assertBalance(
               initialOriginBalance.subtract(operationEvent.getAmount()),
               accountOrigin.get().getBalance()
       );
 
-      assertEquals(
+      assertBalance(
               initialDestinationBalance.add(operationEvent.getAmount()),
               accountDestination.get().getBalance()
       );
@@ -219,12 +257,12 @@ public class AccountServiceTest {
       assertNotNull(transferResponse.getDestination());
       assertNotNull(transferResponse.getOrigin());
 
-      assertEquals(
+      assertBalance(
               initialOriginBalance.subtract(operationEvent.getAmount()),
               transferResponse.getOrigin().getBalance()
       );
 
-      assertEquals(
+      assertBalance(
               initialDestinationBalance.add(operationEvent.getAmount()),
               transferResponse.getDestination().getBalance()
       );
@@ -256,22 +294,70 @@ public class AccountServiceTest {
       assertTrue(accountOrigin.isPresent());
       assertTrue(accountDestination.isPresent());
 
-      assertEquals(new BigDecimal("40"), accountOrigin.get().getBalance());
-      assertEquals(new BigDecimal("10"), accountDestination.get().getBalance());
+      assertBalance(new BigDecimal("40"), accountOrigin.get().getBalance());
+      assertBalance(new BigDecimal("10"), accountDestination.get().getBalance());
 
       assertNotNull(transferResponse);
 
       assertEquals("1234", transferResponse.getOrigin().getId());
       assertEquals("2222", transferResponse.getDestination().getId());
 
-      assertEquals(
+      assertBalance(
               new BigDecimal("40"),
               transferResponse.getOrigin().getBalance()
       );
 
-      assertEquals(
+      assertBalance(
               new BigDecimal("10"),
               transferResponse.getDestination().getBalance()
+      );
+   }
+
+   @Test
+   void shouldThrowExceptionWhenTransferringFromNonexistentAccount() {
+
+      OperationEvent operationEvent = new OperationEvent();
+
+      operationEvent.setType(TypeEnum.TRANSFER);
+      operationEvent.setAmount(new BigDecimal("10"));
+      operationEvent.setOrigin("1234");
+      operationEvent.setDestination("2222");
+
+      assertThrows(
+              AccountNotFoundException.class,
+              () -> accountService.transfer(operationEvent)
+      );
+
+      assertTrue(accountRepository.findAccountById("1234").isEmpty());
+      assertTrue(accountRepository.findAccountById("2222").isEmpty());
+   }
+
+   @Test
+   void shouldThrowExceptionWhenTransferringWithInsufficientFunds() {
+
+      accountRepository.save(new Account("1234", new BigDecimal("50")));
+      accountRepository.save(new Account("2222", new BigDecimal("20")));
+
+      OperationEvent operationEvent = new OperationEvent();
+
+      operationEvent.setType(TypeEnum.TRANSFER);
+      operationEvent.setAmount(new BigDecimal("100"));
+      operationEvent.setOrigin("1234");
+      operationEvent.setDestination("2222");
+
+      assertThrows(
+              InsuficientFundsException.class,
+              () -> accountService.transfer(operationEvent)
+      );
+
+      assertBalance(
+              new BigDecimal("50"),
+              accountRepository.findAccountById("1234").get().getBalance()
+      );
+
+      assertBalance(
+              new BigDecimal("20"),
+              accountRepository.findAccountById("2222").get().getBalance()
       );
    }
 }

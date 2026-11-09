@@ -1,21 +1,27 @@
+
 package br.com.ebanx.service;
 
 import br.com.ebanx.exception.AccountNotFoundException;
 import br.com.ebanx.model.*;
 import br.com.ebanx.repository.AccountRepositoryInterface;
 
+import org.springframework.stereotype.Service;
+
 import java.math.BigDecimal;
 import java.util.Optional;
 
+@Service
 public class AccountService {
 
     private final AccountRepositoryInterface accountRepositoryInterface;
+
     public AccountService(AccountRepositoryInterface accountRepositoryInterface) {
         this.accountRepositoryInterface = accountRepositoryInterface;
     }
 
     public DepositResponse deposit(OperationEvent operationEvent) {
-        Optional<Account> existentAccount = accountRepositoryInterface.findAccountById(operationEvent.getDestination());
+        Optional<Account> existentAccount =
+                accountRepositoryInterface.findAccountById(operationEvent.getDestination());
 
         Account account = existentAccount.orElseGet(
                 () -> new Account(
@@ -29,65 +35,59 @@ public class AccountService {
         }
 
         accountRepositoryInterface.save(account);
+
         return new DepositResponse(account);
     }
 
     public BigDecimal getBalance(String accountId) {
-        Optional<Account> account = accountRepositoryInterface.findAccountById(accountId);
+        Account account = accountRepositoryInterface.findAccountById(accountId)
+                .orElseThrow(() -> new AccountNotFoundException(
+                        "Account not found: " + accountId
+                ));
 
-        if (account.isEmpty()) {
-            throw new AccountNotFoundException(
-                    "Account not found: " + accountId
-            );
-        }
-
-        return account.get().getBalance();
+        return account.getBalance();
     }
 
-    public WithdrawResponse withdraw(OperationEvent operationEvent) throws AccountNotFoundException {
-        Optional<Account> existentAccount = accountRepositoryInterface.findAccountById(operationEvent.getOrigin());
+    public WithdrawResponse withdraw(OperationEvent operationEvent) {
+        Account account = accountRepositoryInterface
+                .findAccountById(operationEvent.getOrigin())
+                .orElseThrow(() -> new AccountNotFoundException(
+                        "Account not found: " + operationEvent.getOrigin()
+                ));
 
-        if (existentAccount.isEmpty()) {
-            throw new AccountNotFoundException(
-                    "Account not found: " + operationEvent.getOrigin()
-            );
-        }
-        Account account = existentAccount.get();
         account.withdraw(operationEvent.getAmount());
 
-        accountRepositoryInterface.save(existentAccount.get());
-        return new WithdrawResponse(existentAccount.get());
+        accountRepositoryInterface.save(account);
+
+        return new WithdrawResponse(account);
     }
 
     public TransferResponse transfer(OperationEvent operationEvent) {
-        Optional<Account> originAccount = accountRepositoryInterface.findAccountById(operationEvent.getOrigin());
+        Account origin = accountRepositoryInterface
+                .findAccountById(operationEvent.getOrigin())
+                .orElseThrow(() -> new AccountNotFoundException(
+                        "Account not found: " + operationEvent.getOrigin()
+                ));
 
-        if (originAccount.isEmpty()) {
-            throw new AccountNotFoundException(
-                    "Account not found: " + operationEvent.getOrigin()
-            );
-        }
+        Optional<Account> optionalDestination =
+                accountRepositoryInterface.findAccountById(operationEvent.getDestination());
 
-        Optional<Account> optionalDestination = accountRepositoryInterface.findAccountById(operationEvent.getDestination());
-        Account destinationAccount = optionalDestination.orElseGet(
+        Account destination = optionalDestination.orElseGet(
                 () -> new Account(
                         operationEvent.getDestination(),
                         BigDecimal.ZERO
                 )
         );
 
-        Account origin = originAccount.get();
-
-        //debita
+        // Debita a conta de origem
         origin.withdraw(operationEvent.getAmount());
         accountRepositoryInterface.save(origin);
 
-        //deposita
-        destinationAccount.deposit(operationEvent.getAmount());
-        accountRepositoryInterface.save(destinationAccount);
+        // Credita a conta de destino
+        destination.deposit(operationEvent.getAmount());
+        accountRepositoryInterface.save(destination);
 
-
-        return new TransferResponse(origin, destinationAccount);
+        return new TransferResponse(origin, destination);
     }
 
     public void reset() {

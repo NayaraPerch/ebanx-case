@@ -2,73 +2,64 @@ package br.com.ebanx.repository;
 
 import br.com.ebanx.model.Account;
 
-import java.sql.*;
+import jakarta.annotation.PostConstruct;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
 import java.util.Optional;
+
+@Repository
 public class AccountRepository implements AccountRepositoryInterface {
-    private final Connection connection;
 
-    public AccountRepository(Connection connection) {
-        this.connection = connection;
-        this.createTableIfNotExists();
+    private final JdbcTemplate jdbcTemplate;
+
+    public AccountRepository(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
     }
 
+    @PostConstruct
     private void createTableIfNotExists() {
-        String sql = "CREATE TABLE IF NOT EXISTS accounts (" +
-                "id VARCHAR(50) PRIMARY KEY, " +
-                "balance int NOT NULL)";
-        try (Statement stmt = this.connection.createStatement()) {
-            stmt.execute(sql);
-        } catch (SQLException e) {
-            throw new RuntimeException("Erro ao criar a tabela de contas", e);
-        }
-    }
+        String sql = """
+                CREATE TABLE IF NOT EXISTS accounts (
+                    id VARCHAR(50) PRIMARY KEY,
+                    balance DECIMAL(19, 2) NOT NULL
+                )
+                """;
 
+        jdbcTemplate.execute(sql);
+    }
 
     @Override
     public Optional<Account> findAccountById(String id) {
         String sql = "SELECT id, balance FROM accounts WHERE id = ?";
 
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setString(1, id);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    // Substitua pelo construtor correto da sua classe Account (ex: id, balance)
-                    Account account = new Account(rs.getString("id"), rs.getBigDecimal("balance"));
-                    return Optional.of(account);
-                }
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("Erro ao buscar conta com id: " + id, e);
-        }
-
-        return Optional.empty();
+        return jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> new Account(
+                        rs.getString("id"),
+                        rs.getBigDecimal("balance")
+                ),
+                id
+        ).stream().findFirst();
     }
 
     @Override
     public void save(Account account) {
+        String sql = """
+                MERGE INTO accounts (id, balance)
+                KEY(id)
+                VALUES (?, ?)
+                """;
 
-        String sql = "MERGE INTO accounts (id, balance) KEY(id) VALUES (?, ?)";
-
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setString(1, account.getId());
-            stmt.setBigDecimal(2, account.getBalance());
-
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            throw new RuntimeException("Erro ao salvar/atualizar a conta", e);
-        }
+        jdbcTemplate.update(
+                sql,
+                account.getId(),
+                account.getBalance()
+        );
     }
 
     @Override
     public void clear() {
-
-        String sql = "TRUNCATE TABLE accounts";
-
-        try (Statement stmt = connection.createStatement()) {
-            stmt.execute(sql);
-        } catch (SQLException e) {
-            throw new RuntimeException("Erro ao limpar a tabela de contas", e);
-        }
+        jdbcTemplate.execute("TRUNCATE TABLE accounts");
     }
 }

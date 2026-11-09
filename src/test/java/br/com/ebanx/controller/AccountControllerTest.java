@@ -1,312 +1,284 @@
 package br.com.ebanx.controller;
 
+import br.com.ebanx.exception.AccountNotFoundException;
+import br.com.ebanx.exception.InsuficientFundsException;
 import br.com.ebanx.model.Account;
-import br.com.ebanx.repository.AccountRepositoryInterface;
-import br.com.ebanx.repository.InMemoryAccountRepositoryInterface;
+import br.com.ebanx.model.OperationEvent;
+import br.com.ebanx.model.TransferResponse;
 import br.com.ebanx.service.AccountService;
-import com.sun.net.httpserver.HttpServer;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
 import java.math.BigDecimal;
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
-public class AccountControllerTest {
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-    private HttpServer server;
-    private AccountRepositoryInterface repository;
-    @BeforeEach
-    void setUp() throws IOException {
+@WebMvcTest(AccountController.class)
+class AccountControllerTest {
 
-        server = HttpServer.create(
-                new InetSocketAddress(0),
-                0
-        );
+    @Autowired
+    private MockMvc mockMvc;
 
-        repository = new InMemoryAccountRepositoryInterface();
-        AccountService service = new AccountService(repository);
-        server.createContext("/balance", new AccountController(service));
-        server.createContext("/event", new AccountController(service));
-        server.createContext("/reset", new AccountController(service));
-        server.start();
+    @MockitoBean
+    private AccountService accountService;
 
-    }
+    @Test
+    void shouldReturn404WhenAccountDoesNotExist() throws Exception {
 
-    @AfterEach
-    void tearDown() {
-        server.stop(0);
+        when(accountService.getBalance("1234"))
+                .thenThrow(new AccountNotFoundException("Account not found: 1234"));
+
+        mockMvc.perform(get("/balance")
+                        .param("accountId", "1234"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string("0"));
     }
 
     @Test
-    void shouldReturn404WhenAccountDoesNotExist() throws IOException, InterruptedException {
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
+    void shouldReturn200WhenBalanceAccount() throws Exception {
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:"+port+"/balance?account_id=1234"))
-                .GET()
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        when(accountService.getBalance("1234"))
+                .thenReturn(new BigDecimal("150"));
 
-        assertEquals(404, response.statusCode());
-        assertEquals("0", response.body());
-    }
-    @Test
-    void shouldReturn200WhenBalanceAccount() throws IOException, InterruptedException {
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
-        repository.save(new Account("1234", new BigDecimal("150")));
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:"+port+"/balance?account_id=1234"))
-                .GET()
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        assertEquals(200, response.statusCode());
-        assertEquals("150", response.body());
+        mockMvc.perform(get("/balance")
+                        .param("accountId", "1234"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("150"));
     }
 
     @Test
-    void shouldReturn201WhenDepositingIntoNonexistentAccount() throws IOException, InterruptedException {
-
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
-        String json = "{\"type\":\"deposit\", \"destination\":\"100\", \"amount\":10}";
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:"+port+"/event"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        assertEquals(201, response.statusCode());
-    }
-
-    @Test
-    void shouldReturn201WhenDepositingIntoExistentAccount() throws IOException, InterruptedException {
-
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
-        String json = "{\"type\":\"deposit\", \"destination\":\"1234\", \"amount\":10}";
-        repository.save(new Account("1234", new BigDecimal("150")));
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:"+port+"/event"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        assertEquals(201, response.statusCode());
-    }
-
-    @Test
-    void shouldReturn404WhenWithDrawNonExistentAccount() throws IOException, InterruptedException {
-
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
-        String json = "{\"type\":\"withdraw\", \"origin\":\"1234\", \"amount\":10}";
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:"+port+"/event"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        assertEquals(404, response.statusCode());
-        assertEquals("0", response.body());
-    }
-
-    @Test
-    void shouldReturn201WhenWithdrawingFromExistingAccount() throws IOException, InterruptedException {
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
-        String json = "{\"type\":\"withdraw\", \"origin\":\"1234\", \"amount\":10}";
-        repository.save(new Account("1234", new BigDecimal("150")));
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:"+port+"/event"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        assertEquals(201, response.statusCode());
-    }
-
-    @Test
-    void shouldReturn404WhenTransferFromNonExistentAccount() throws IOException, InterruptedException {
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
-        String json = "{\"type\":\"transfer\", \"origin\":\"1234\", \"amount\":10, \"origin\":\"4567\"}";
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:"+port+"/event"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        assertEquals(404, response.statusCode());
-        assertEquals("0", response.body());
-    }
-
-    @Test
-    void shouldReturn201WhenTransferFromExistentAccountToNonExistentAccount() throws IOException, InterruptedException {
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
-        String json = "{\"type\":\"transfer\", \"origin\":\"1234\", \"amount\":10, \"destination\":\"4567\"}";
-        repository.save(new Account("1234", new BigDecimal("150")));
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:"+port+"/event"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        // Valida o corpo da resposta
-        String expectedJson = """
-        {
-            "origin": {
-                "id": "1234",
-                "balance": 140
-            },
-            "destination": {
-                "id": "4567",
-                "balance": 10
-            }
-        }
-        """;
-
-        ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode expected = objectMapper.readTree(expectedJson);
-        JsonNode actual = objectMapper.readTree(response.body());
-
-        assertEquals(expected, actual);
-
-       // Valida os saldos no repositório
-        assertEquals(
-                new BigDecimal("140"),
-                repository.findAccountById("1234").get().getBalance()
-        );
-
-        assertEquals(
-                new BigDecimal("10"),
-                repository.findAccountById("4567").get().getBalance()
-        );
-        assertEquals(201, response.statusCode());
-    }
-
-    @Test
-    void shouldReturn201WhenTransferBetweenTwoExistingAccounts() throws IOException, InterruptedException {
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
+    void shouldReturn201WhenDepositingIntoNonexistentAccount() throws Exception {
 
         String json = """
-            {
-                "type": "transfer",
-                "origin": "1234",
-                "amount": 10,
-                "destination": "4567"
-            }
-            """;
-
-        repository.save(new Account("1234", new BigDecimal("150")));
-        repository.save(new Account("4567", new BigDecimal("50")));
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:" + port + "/event"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .build();
-
-        HttpResponse<String> response = client.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
-
-        assertEquals(201, response.statusCode());
-
-        String expectedJson = """
-            {
-                "origin": {
-                    "id": "1234",
-                    "balance": 140
-                },
-                "destination": {
-                    "id": "4567",
-                    "balance": 60
+                {
+                    "type": "deposit",
+                    "destination": "100",
+                    "amount": 10
                 }
-            }
-            """;
+                """;
 
-        ObjectMapper objectMapper = new ObjectMapper();
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isCreated());
 
-        JsonNode expected = objectMapper.readTree(expectedJson);
-        JsonNode actual = objectMapper.readTree(response.body());
-
-        assertEquals(expected, actual);
-
-        // Valida os saldos no repositório
-        assertEquals(
-                new BigDecimal("140"),
-                repository.findAccountById("1234").get().getBalance()
-        );
-
-        assertEquals(
-                new BigDecimal("60"),
-                repository.findAccountById("4567").get().getBalance()
-        );
+        verify(accountService).deposit(any(OperationEvent.class));
     }
 
     @Test
-    void shouldReturn200AndResetAllAccounts() throws IOException, InterruptedException {
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
+    void shouldReturn201WhenDepositingIntoExistentAccount() throws Exception {
 
-        repository.save(new Account("1234", new BigDecimal("150")));
-        repository.save(new Account("4567", new BigDecimal("50")));
+        String json = """
+                {
+                    "type": "deposit",
+                    "destination": "1234",
+                    "amount": 10
+                }
+                """;
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:" + port + "/reset"))
-                .POST(HttpRequest.BodyPublishers.noBody())
-                .build();
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isCreated());
 
-        HttpResponse<String> response = client.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
-
-        assertEquals(200, response.statusCode());
-        assertEquals("OK", response.body());
-
-        assertTrue(repository.findAccountById("1234").isEmpty());
-        assertTrue(repository.findAccountById("4567").isEmpty());
+        verify(accountService).deposit(any(OperationEvent.class));
     }
 
     @Test
-    void shouldReturn200WhenResettingEmptyRepository() throws IOException, InterruptedException {
-        int port = server.getAddress().getPort();
-        HttpClient client = HttpClient.newHttpClient();
+    void shouldReturn404WhenWithdrawingFromNonexistentAccount() throws Exception {
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:" + port + "/reset"))
-                .POST(HttpRequest.BodyPublishers.noBody())
-                .build();
+        String json = """
+                {
+                    "type": "withdraw",
+                    "origin": "1234",
+                    "amount": 10
+                }
+                """;
 
-        HttpResponse<String> response = client.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
+        when(accountService.withdraw(any(OperationEvent.class)))
+                .thenThrow(new AccountNotFoundException("Account not found: 1234"));
 
-        assertEquals(200, response.statusCode());
-        assertEquals("OK", response.body());
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string("0"));
+    }
+
+    @Test
+    void shouldReturn201WhenWithdrawingFromExistingAccount() throws Exception {
+
+        String json = """
+                {
+                    "type": "withdraw",
+                    "origin": "1234",
+                    "amount": 10
+                }
+                """;
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isCreated());
+
+        verify(accountService).withdraw(any(OperationEvent.class));
+    }
+
+    @Test
+    void shouldReturn422WhenWithdrawingWithInsufficientFunds() throws Exception {
+
+        String json = """
+                {
+                    "type": "withdraw",
+                    "origin": "1234",
+                    "amount": 200
+                }
+                """;
+
+        when(accountService.withdraw(any(OperationEvent.class)))
+                .thenThrow(new InsuficientFundsException("Insufficient funds"));
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().string("Insufficient funds"));
+    }
+
+    @Test
+    void shouldReturn404WhenTransferFromNonexistentAccount() throws Exception {
+
+        String json = """
+                {
+                    "type": "transfer",
+                    "origin": "1234",
+                    "destination": "4567",
+                    "amount": 10
+                }
+                """;
+
+        when(accountService.transfer(any(OperationEvent.class)))
+                .thenThrow(new AccountNotFoundException("Account not found: 1234"));
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string("0"));
+    }
+
+    @Test
+    void shouldReturn201WhenTransferFromExistentAccountToNonexistentAccount()
+            throws Exception {
+
+        String json = """
+                {
+                    "type": "transfer",
+                    "origin": "1234",
+                    "destination": "4567",
+                    "amount": 10
+                }
+                """;
+
+        Account origin = new Account("1234", new BigDecimal("140"));
+        Account destination = new Account("4567", new BigDecimal("10"));
+
+        when(accountService.transfer(any(OperationEvent.class)))
+                .thenReturn(new TransferResponse(origin, destination));
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.origin.id").value("1234"))
+                .andExpect(jsonPath("$.origin.balance").value(140))
+                .andExpect(jsonPath("$.destination.id").value("4567"))
+                .andExpect(jsonPath("$.destination.balance").value(10));
+
+        verify(accountService).transfer(any(OperationEvent.class));
+    }
+
+    @Test
+    void shouldReturn201WhenTransferBetweenTwoExistingAccounts()
+            throws Exception {
+
+        String json = """
+                {
+                    "type": "transfer",
+                    "origin": "1234",
+                    "destination": "4567",
+                    "amount": 10
+                }
+                """;
+
+        Account origin = new Account("1234", new BigDecimal("140"));
+        Account destination = new Account("4567", new BigDecimal("60"));
+
+        when(accountService.transfer(any(OperationEvent.class)))
+                .thenReturn(new TransferResponse(origin, destination));
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.origin.id").value("1234"))
+                .andExpect(jsonPath("$.origin.balance").value(140))
+                .andExpect(jsonPath("$.destination.id").value("4567"))
+                .andExpect(jsonPath("$.destination.balance").value(60));
+
+        verify(accountService).transfer(any(OperationEvent.class));
+    }
+
+    @Test
+    void shouldReturn422WhenTransferWithInsufficientFunds() throws Exception {
+
+        String json = """
+                {
+                    "type": "transfer",
+                    "origin": "1234",
+                    "destination": "4567",
+                    "amount": 200
+                }
+                """;
+
+        when(accountService.transfer(any(OperationEvent.class)))
+                .thenThrow(new InsuficientFundsException("Insufficient funds"));
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().string("Insufficient funds"));
+    }
+
+    @Test
+    void shouldReturn200AndResetAllAccounts() throws Exception {
+
+        mockMvc.perform(post("/reset"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("OK"));
+
+        verify(accountService).reset();
+    }
+
+    @Test
+    void shouldReturn200WhenResettingEmptyRepository() throws Exception {
+
+        mockMvc.perform(post("/reset"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("OK"));
+
+        verify(accountService).reset();
     }
 }
