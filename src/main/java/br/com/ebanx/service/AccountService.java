@@ -6,6 +6,7 @@ import br.com.ebanx.model.*;
 import br.com.ebanx.repository.AccountRepositoryInterface;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -62,6 +63,7 @@ public class AccountService {
         return new WithdrawResponse(account);
     }
 
+    @Transactional
     public TransferResponse transfer(OperationEvent operationEvent) {
         Account origin = accountRepositoryInterface
                 .findAccountById(operationEvent.getOrigin())
@@ -79,11 +81,9 @@ public class AccountService {
                 )
         );
 
-        // Debita a conta de origem
         origin.withdraw(operationEvent.getAmount());
         accountRepositoryInterface.save(origin);
 
-        // Credita a conta de destino
         destination.deposit(operationEvent.getAmount());
         accountRepositoryInterface.save(destination);
 
