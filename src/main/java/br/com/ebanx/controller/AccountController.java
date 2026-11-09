@@ -1,6 +1,7 @@
 package br.com.ebanx.controller;
 
 import br.com.ebanx.exception.AccountNotFoundException;
+import br.com.ebanx.exception.InsuficientFundsException;
 import br.com.ebanx.model.OperationEvent;
 import br.com.ebanx.service.AccountService;
 import com.sun.net.httpserver.HttpExchange;
@@ -73,7 +74,10 @@ public class AccountController implements HttpHandler {
                     }catch (AccountNotFoundException e){
                         sendResponse(exchange, 404, "0");
                         return;
-                    }
+                    }catch (InsuficientFundsException e){
+                    sendResponse(exchange, 422, e.getMessage());
+                    return;
+                }
                 }
                 case WITHDRAW -> {
                    try{
@@ -82,7 +86,10 @@ public class AccountController implements HttpHandler {
                     }catch (AccountNotFoundException e){
                         sendResponse(exchange, 404, "0");
                         return;
-                    }
+                    }catch (InsuficientFundsException e){
+                       sendResponse(exchange, 422, e.getMessage());
+                       return;
+                   }
                 }
                 default -> throw new IllegalStateException("Unexpected value: " + event.getType());
             }
