@@ -6,6 +6,7 @@ import br.com.ebanx.exception.InsuficientFundsException;
 import br.com.ebanx.model.OperationEvent;
 import br.com.ebanx.service.AccountService;
 
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -43,7 +44,7 @@ public class AccountController {
 
     @PostMapping("/event")
     public ResponseEntity<?> processEvent(
-            @RequestBody OperationEvent event) {
+           @Valid @RequestBody OperationEvent event) {
 
         Object response;
 

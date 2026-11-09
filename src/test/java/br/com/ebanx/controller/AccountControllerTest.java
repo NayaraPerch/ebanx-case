@@ -40,7 +40,7 @@ class AccountControllerTest {
                 .thenThrow(new AccountNotFoundException("Account not found: 1234"));
 
         mockMvc.perform(get("/balance")
-                        .param("accountId", "1234"))
+                        .param("account_id", "1234"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().string("0"));
     }
@@ -52,7 +52,7 @@ class AccountControllerTest {
                 .thenReturn(new BigDecimal("150"));
 
         mockMvc.perform(get("/balance")
-                        .param("accountId", "1234"))
+                        .param("account_id", "1234"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("150"));
     }
@@ -280,5 +280,72 @@ class AccountControllerTest {
                 .andExpect(content().string("OK"));
 
         verify(accountService).reset();
+    }
+    @Test
+    void shouldReturn400WhenAmountIsNegative() throws Exception {
+
+        String json = """
+            {
+                "type": "deposit",
+                "destination": "1234",
+                "amount": -10
+            }
+            """;
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldReturn400WhenAmountIsNull() throws Exception {
+
+        String json = """
+            {
+                "type": "deposit",
+                "destination": "1234",
+                "amount": null
+            }
+            """;
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldReturn400WhenAmountIsMissing() throws Exception {
+
+        String json = """
+            {
+                "type": "deposit",
+                "destination": "1234"
+            }
+            """;
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest());
+    }
+    @Test
+    void shouldAcceptZeroAmount() throws Exception {
+
+        String json = """
+            {
+                "type": "deposit",
+                "destination": "1234",
+                "amount": 0
+            }
+            """;
+
+        mockMvc.perform(post("/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isCreated());
+
+        verify(accountService).deposit(any(OperationEvent.class));
     }
 }
